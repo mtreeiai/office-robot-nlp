@@ -1,0 +1,95 @@
+{
+  "rooms": [
+    {
+      "room_id": "01",
+      "display_name": "phong1",
+      "description": "",
+      "room_anchor": {"x": 6.900, "y": 3.450},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": 8.100, "y": 1.900},
+        "p2": {"x": 9.150, "y": 2.000},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": 8.700, "y": 1.450, "yaw": 1.720, "yaw_deg": 98.5}
+      }]
+    },
+    {
+      "room_id": "02",
+      "display_name": "phong2",
+      "description": "",
+      "room_anchor": {"x": 25.000, "y": -3.700},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": 25.050, "y": -1.300},
+        "p2": {"x": 23.650, "y": -3.050},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": 23.900, "y": -4.150, "yaw": 1.347, "yaw_deg": 77.2}
+      }]
+    },
+    {
+      "room_id": "03",
+      "display_name": "phong3",
+      "description": "",
+      "room_anchor": {"x": 12.800, "y": -1.200},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": 12.000, "y": 0.200},
+        "p2": {"x": 13.800, "y": 0.200},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": 13.600, "y": 0.650, "yaw": -2.570, "yaw_deg": -147.3}
+      }]
+    },
+    {
+      "room_id": "04",
+      "display_name": "phong4",
+      "description": "",
+      "room_anchor": {"x": 10.450, "y": 7.800},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": 9.950, "y": 6.950},
+        "p2": {"x": 15.550, "y": 7.100},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": 12.800, "y": 7.600, "yaw": -1.658, "yaw_deg": -95.0}
+      }]
+    },
+    {
+      "room_id": "05",
+      "display_name": "phong5",
+      "description": "",
+      "room_anchor": {"x": 6.550, "y": -0.550},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": 4.650, "y": 0.200},
+        "p2": {"x": 6.000, "y": 0.200},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": 5.250, "y": -0.300, "yaw": 1.422, "yaw_deg": 81.5}
+      }]
+    },
+    {
+      "room_id": "06",
+      "display_name": "phong giai lao",
+      "description": "",
+      "room_anchor": {"x": -10.150, "y": 2.650},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": -4.000, "y": 2.950},
+        "p2": {"x": -11.050, "y": -2.750},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": -3.950, "y": 1.600, "yaw": -2.744, "yaw_deg": -157.2}
+      }]
+    },
+    {
+      "room_id": "07",
+      "display_name": "an",
+      "description": "",
+      "room_anchor": {"x": -5.100, "y": -6.650},
+      "doors": [{
+        "id": "main_door",
+        "p1": {"x": -9.200, "y": -2.950},
+        "p2": {"x": -4.050, "y": -5.300},
+        "zone_depth": 0.300,
+        "staging_pose": {"x": -8.600, "y": -5.050, "yaw": 0.438, "yaw_deg": 25.1}
+      }]
+    }
+  ]
+}

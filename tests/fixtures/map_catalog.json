@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "locations": [
+    {
+      "id": "meeting_room_A",
+      "name": "Phòng họp A",
+      "aliases": [
+        "phòng A",
+        "phòng họp A",
+        "meeting room A"
+      ]
+    },
+    {
+      "id": "meeting_room_B",
+      "name": "Phòng họp B",
+      "aliases": [
+        "phòng B",
+        "phòng họp B",
+        "meeting room B"
+      ]
+    }
+  ]
+}

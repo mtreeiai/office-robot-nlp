@@ -1,0 +1,11 @@
+{
+  "rooms": [
+    {"room_id": "01", "spoken_name": "Phòng 1", "aliases": ["phòng 1", "phong 1", "phong1"]},
+    {"room_id": "02", "spoken_name": "Phòng 2", "aliases": ["phòng 2", "phong 2", "phong2"]},
+    {"room_id": "03", "spoken_name": "Phòng 3", "aliases": ["phòng 3", "phong 3", "phong3"]},
+    {"room_id": "04", "spoken_name": "Phòng 4", "aliases": ["phòng 4", "phong 4", "phong4"]},
+    {"room_id": "05", "spoken_name": "Phòng 5", "aliases": ["phòng 5", "phong 5", "phong5"]},
+    {"room_id": "06", "spoken_name": "Phòng 6", "aliases": ["phòng 6", "phong 6", "phong6"]},
+    {"room_id": "07", "spoken_name": "Phòng 7", "aliases": ["phòng 7", "phong 7", "phong7"]}
+  ]
+}
