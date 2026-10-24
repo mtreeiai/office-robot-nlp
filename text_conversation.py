@@ -3,6 +3,8 @@
 import argparse
 import os
 import re
+from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Mapping
@@ -15,6 +17,8 @@ from office_robot_nlp.clu import (
     UnknownUtteranceResult,
 )
 from office_robot_nlp.dialogue_manager import (
+    BatchClarificationRequired,
+    BatchReady,
     ClarificationRequired,
     DecisionReady,
     DialogueError,
@@ -25,6 +29,8 @@ from office_robot_nlp.dialogue_manager import (
 )
 from office_robot_nlp.domain.conversation import ConversationMode, ConversationState
 from office_robot_nlp.domain.map import MapCatalog
+from office_robot_nlp.domain.batch import BatchIssue, BatchTaskReference, DeliveryBatch, PendingBatch
+from office_robot_nlp.batch_validation import validate_batch
 from office_robot_nlp.entity_resolver import normalize_location_text
 from office_robot_nlp.evaluation import ProviderRuntime, build_runtime
 from office_robot_nlp.gemini_adapter import GeminiAdapterError
@@ -37,6 +43,7 @@ from office_robot_nlp.response_plan import (
     TemplateNaturalResponseGenerator,
     generate_with_fallback,
     response_plan_for,
+    response_plan_for_registered_batch,
     response_plan_for_lifecycle,
 )
 from office_robot_nlp.task_lifecycle import (
@@ -55,6 +62,7 @@ from office_robot_nlp.runtime_monitor import (
     apply_monitoring_event,
     render_robot_state,
     render_task_monitor,
+    render_batch_monitor,
     require_event_source,
 )
 
@@ -107,16 +115,22 @@ class TextConversationApplication:
         response_generator: NaturalResponseGenerator | None = None,
         room_registry: SemanticRoomRegistry | None = None,
         simulation_enabled: bool = False,
+        session_id: str | None = None,
     ):
         self.parser = parser
         self.map_catalog = map_catalog
         self.room_registry = room_registry
         self.dialogue_manager = DialogueManager()
         self.state = initial_conversation_state()
+        if session_id is not None:
+            self.state = replace(self.state, conversationId=session_id)
+        self._id_namespace = f"{session_id}_" if session_id is not None else ""
         self.provider_runtime = provider_runtime
         self.response_generator = response_generator or TemplateNaturalResponseGenerator()
         self.template_generator = TemplateNaturalResponseGenerator()
         self._tasks: dict[str, TaskMonitoringRecord] = {}
+        self._batches: dict[str, DeliveryBatch] = {}
+        self._batch_sequence = 0
         self._active_task_id: str | None = None
         self.robot_state = RobotStateSnapshot()
         self.simulation_enabled = simulation_enabled
@@ -125,6 +139,75 @@ class TextConversationApplication:
     @property
     def tasks(self) -> Mapping[str, TaskMonitoringRecord]:
         return MappingProxyType(self._tasks)
+
+    @property
+    def batches(self) -> Mapping[str, DeliveryBatch]:
+        return MappingProxyType(self._batches)
+
+    def _resource_id(self, kind: str, sequence: int) -> str:
+        return f"{kind}_{self._id_namespace}{sequence:03d}"
+
+    @contextmanager
+    def conversation_transaction(self):
+        """Rollback an unsuccessful adapter turn, including serialization failures.
+
+        The caller owns serialization/locking. Provider objects are not copied;
+        all conversation and monitoring data is restored on failure.
+        """
+        saved = deepcopy((self.state, self._tasks, self._batches, self.robot_state,
+                          self._task_sequence, self._batch_sequence, self._active_task_id))
+        try:
+            yield
+        except Exception:
+            (self.state, self._tasks, self._batches, self.robot_state,
+             self._task_sequence, self._batch_sequence, self._active_task_id) = saved
+            raise
+
+    def _next_task_ids(self, count: int) -> tuple[tuple[str, ...], int]:
+        sequence = self._task_sequence
+        ids = []
+        for _ in range(count):
+            sequence += 1
+            while self._resource_id("task", sequence) in self._tasks:
+                sequence += 1
+            ids.append(self._resource_id("task", sequence))
+        return tuple(ids), sequence
+
+    def register_batch(self, ready: BatchReady) -> DeliveryBatch:
+        """Prepare all records and publish them together, with no dispatch."""
+        validated = validate_batch(ready.draft, self.map_catalog)
+        if validated.issues or len(validated.resolved) != len(ready.resolvedIntents):
+            raise ValueError("Batch must be fully validated before registration.")
+        for actual, supplied in zip(validated.resolved, ready.resolvedIntents):
+            if actual != supplied or actual.recipientText != supplied.recipientText:
+                raise ValueError("Batch result does not match deterministic validation.")
+            if supplied.document.documentId is not None:
+                raise ValueError("Batch intake does not assign physical document IDs.")
+        task_ids, task_sequence = self._next_task_ids(len(validated.resolved))
+        if len(task_ids) != len(validated.resolved) or len(set(task_ids)) != len(task_ids):
+            raise ValueError("Duplicate or missing task IDs during batch registration.")
+        if any(task_id in self._tasks for task_id in task_ids):
+            raise ValueError("Batch task ID already exists.")
+        batch_sequence = self._batch_sequence + 1
+        while self._resource_id("batch", batch_sequence) in self._batches:
+            batch_sequence += 1
+        batch_id = self._resource_id("batch", batch_sequence)
+        batch = DeliveryBatch(batch_id, self.state.conversationId,
+                              tuple(BatchTaskReference(task_id, index) for index, task_id in enumerate(task_ids)),
+                              ready.draft.orderPolicy)
+        staged = {}
+        for member, intent in zip(batch.tasks, validated.resolved):
+            staged[member.taskId] = TaskMonitoringRecord(
+                create_ready_task(member.taskId, intent), batchId=batch.batchId, sequenceIndex=member.sequenceIndex,
+            )
+        new_tasks = {**self._tasks, **staged}
+        new_batches = {**self._batches, batch_id: batch}
+        # Nothing above changes the live session. No callbacks or provider calls
+        # occur between preparing the complete state and this in-memory commit.
+        self._tasks, self._batches, self._task_sequence, self._batch_sequence, self._active_task_id = (
+            new_tasks, new_batches, task_sequence, batch_sequence, task_ids[-1],
+        )
+        return batch
 
     @property
     def active_task(self) -> DeliveryTaskLifecycle | None:
@@ -153,7 +236,7 @@ class TextConversationApplication:
         previous_state = self.state
         try:
             clu_result = self.parser.parse(text, previous_state)
-        except (GeminiAdapterError, OllamaAdapterError, RuntimeError) as error:
+        except (GeminiAdapterError, OllamaAdapterError, RuntimeError, TimeoutError) as error:
             output = ProviderFailure(str(error))
             plan = ResponsePlan(ResponseAct.PROVIDER_TEMPORARILY_UNAVAILABLE, {})
             return ConversationTurn(
@@ -170,32 +253,45 @@ class TextConversationApplication:
                 r"\bphong\s*\d+\b\s*(?:va|hoac|&|,|/)\s*(?:phong\s*)?\d+\b",
                 normalize_location_text(text),
             ):
-                clu_result = UnknownUtteranceResult("Multiple destinations are unsupported")
+                clu_result = UnknownUtteranceResult("Multiple destinations require an unambiguous batch candidate")
 
         handled = self.dialogue_manager.handle(
             previous_state,
             clu_result,
             self.map_catalog,
         )
-        self.state = handled.state
-        if isinstance(handled.result, TaskReady):
-            self._task_sequence += 1
-            while f"task_{self._task_sequence:03d}" in self._tasks:
-                self._task_sequence += 1
+        output = handled.result
+        if isinstance(output, BatchReady):
+            try:
+                batch = self.register_batch(output)
+            except (ValueError, RuntimeError):
+                pending = PendingBatch(output.draft, output.resolvedIntents,
+                                       (BatchIssue(None, "confirmation", "REGISTRATION_FAILED"),))
+                self.state = replace(previous_state, mode=ConversationMode.AWAITING_BATCH_INFORMATION,
+                                     pendingIntent=None, pendingBatch=pending, awaitingField="confirmation")
+                output = BatchClarificationRequired(pending)
+                plan = response_plan_for(output)
+            else:
+                self.state = handled.state
+                plan = response_plan_for_registered_batch(output, batch, self._tasks)
+        elif isinstance(output, TaskReady):
+            self.state = handled.state
+            task_ids, self._task_sequence = self._next_task_ids(1)
             self.active_task = create_ready_task(
-                f"task_{self._task_sequence:03d}",
-                handled.result.resolvedIntent,
+                task_ids[0],
+                output.resolvedIntent,
             )
             plan = response_plan_for_lifecycle(self.active_task)
         else:
-            plan = response_plan_for(handled.result)
+            self.state = handled.state
+            plan = response_plan_for(output)
         response = generate_with_fallback(
             plan,
             self.state,
             self.response_generator,
             self.template_generator,
         )
-        return ConversationTurn(self.state, handled.result, plan, response)
+        return ConversationTurn(self.state, output, plan, response)
 
     def process_monitoring_event(self, event: TaskMonitoringEvent) -> TaskMonitoringRecord:
         """In-process event boundary only; no sending, transport, or scheduling."""
@@ -247,6 +343,9 @@ class TextConversationApplication:
         return render_task_monitor(self._tasks[task_id], self.robot_state,
                                    self.room_registry, self.map_catalog)
 
+    def batch_snapshot(self, batch_id: str) -> str:
+        return render_batch_monitor(self._batches[batch_id], self._tasks, self.robot_state)
+
     def _process_local_command(self, text: str) -> str:
         parts = text.split()
         command = parts[0].casefold()
@@ -256,6 +355,8 @@ class TextConversationApplication:
                 "/status              Latest robot state and current/most recent task",
                 "/tasks               List locally registered tasks (intake order)",
                 "/task <taskId>       Detailed task and map snapshot",
+                "/batches             List locally registered batches",
+                "/batch <batchId>     Batch members, order, and live monitoring states",
                 "/help                Show local commands",
                 "/sim document-loaded <taskId>  Explicit SIMULATED load event",
                 "/sim task-queued <taskId>      Explicit SIMULATED lifecycle event",
@@ -263,6 +364,18 @@ class TextConversationApplication:
                 f"Simulation: {simulation}",
                 "exit / quit          End this in-memory session",
             ])
+        if command == "/batches" and len(parts) == 1:
+            if not self._batches:
+                return "No locally registered batches. Chưa có lô nhiệm vụ được đăng ký."
+            return "\n".join(["Batch ID | Tasks | Semantic Validity", *[
+                f"{batch.batchId} | {len(batch.tasks)} | VALID" for batch in self._batches.values()
+            ]])
+        if command == "/batch":
+            if len(parts) != 2:
+                return "Usage: /batch <batchId>"
+            if parts[1] not in self._batches:
+                return f"Unknown batch ID: {parts[1]}"
+            return self.batch_snapshot(parts[1])
         if command == "/status" and len(parts) == 1:
             task_id = self.robot_state.currentTaskId
             if task_id not in self._tasks:
@@ -318,6 +431,7 @@ def create_application(
     registry_path: str | None = None,
     aliases_path: str | None = None,
     simulation_enabled: bool = False,
+    session_id: str | None = None,
 ) -> TextConversationApplication:
     if map_catalog is not None and (registry_path is not None or aliases_path is not None):
         raise ValueError("Supply either map_catalog or registry paths, not both.")
@@ -342,10 +456,15 @@ def create_application(
         response_generator=response_generator,
         room_registry=registry,
         simulation_enabled=simulation_enabled,
+        session_id=session_id,
     )
 
 
 def render_result(output: ConversationOutput) -> str:
+    if isinstance(output, BatchReady):
+        return f"Batch ready: {len(output.resolvedIntents)} tasks; orderPolicy={output.draft.orderPolicy.value}"
+    if isinstance(output, BatchClarificationRequired):
+        return output.responseText
     if isinstance(output, LocalCommandResult):
         return output.text
     if isinstance(output, ProviderFailure):
@@ -394,6 +513,8 @@ def run_console(application: TextConversationApplication) -> None:
             continue
         print(f"Assistant: {turn.responseText}")
         if os.environ.get("DEBUG_CONVERSATION", "false").casefold() == "true":
+            if isinstance(turn.output, BatchReady):
+                print(application.batch_snapshot(turn.responsePlan.facts["batchId"]))
             if isinstance(turn.output, TaskReady):
                 print(render_result(turn.output))
                 print(application.task_snapshot(application.active_task.taskId))

@@ -144,7 +144,8 @@ class GeminiAdapterTests(unittest.TestCase):
         self.assertEqual(schema, GEMINI_CLU_RESPONSE_SCHEMA)
         self.assertEqual(
             set(schema["properties"]["type"]["enum"]),
-            {"TASK_COMMAND", "TASK_UPDATE", "CLARIFICATION_ANSWER", "ROBOT_DECISION", "SOCIAL", "UNKNOWN"},
+            {"TASK_COMMAND", "TASK_UPDATE", "CLARIFICATION_ANSWER", "ROBOT_DECISION", "SOCIAL", "UNKNOWN",
+             "BATCH_COMMAND", "BATCH_ORDER", "BATCH_CONFIRM", "CANCEL_PENDING"},
         )
         self.assertEqual(
             set(schema["properties"]["parsedIntent"]["properties"]),

@@ -1,0 +1,34 @@
+# One in-memory service. Render supplies RENDER=true and PORT at runtime.
+# No healthCheckPath: retain TCP checks; /health requires the bearer token.
+services:
+  - type: web
+    name: office-robot-nlp
+    runtime: python
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn office_robot_nlp.http_api:create_api --factory --host 0.0.0.0 --port "$PORT" --workers 1 --no-access-log --no-proxy-headers
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.17"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: API_HOST
+        value: "0.0.0.0"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: CLU_PROVIDER
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: NLG_ENABLED
+        value: "false"
+      - key: ROOM_REGISTRY_PATH
+        value: data/office_rooms.json
+      - key: ROOM_ALIASES_PATH
+        value: data/office_room_aliases.json
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: API_ACCESS_TOKEN
+        sync: false

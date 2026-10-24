@@ -3,8 +3,11 @@
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Mapping
 
 from office_robot_nlp.domain.map import MapCatalog
+from office_robot_nlp.domain.batch import DeliveryBatch
+from office_robot_nlp.order_preview import build_order_preview
 from office_robot_nlp.semantic_map import SemanticRoomRegistry
 from office_robot_nlp.task_lifecycle import (
     DeliveryTaskLifecycle, TaskExecutionEvent, TaskLifecycleState, apply_execution_event,
@@ -75,6 +78,8 @@ class TaskMonitoringRecord:
     handoffSource: StateSource = StateSource.NONE
     documentLoadSource: StateSource = StateSource.NONE
     lastEvent: TaskMonitoringEvent | None = None
+    batchId: str | None = None
+    sequenceIndex: int | None = None
 
     @property
     def taskId(self) -> str:
@@ -184,6 +189,8 @@ def render_task_monitor(record: TaskMonitoringRecord, robot: RobotStateSnapshot,
         "=" * 50, "",
         "[SEMANTIC TASK]",
         f"Task ID          : {task.taskId}",
+        f"Batch ID         : {record.batchId or 'NONE'}",
+        f"Sequence Index   : {record.sequenceIndex if record.sequenceIndex is not None else 'NONE'}",
         f"Intent           : {intent.intent.value}",
         f"Document Text    : {intent.document.originalText or 'UNSPECIFIED'}",
         f"Document ID      : {intent.document.documentId or 'UNKNOWN'}",
@@ -217,3 +224,58 @@ def render_task_monitor(record: TaskMonitoringRecord, robot: RobotStateSnapshot,
         f"Execution checks : {_execution_confirmations(record, robot, room_registered)}",
         "", "=" * 50,
     ])
+
+
+def render_batch_monitor(batch: DeliveryBatch, records: Mapping[str, TaskMonitoringRecord],
+                         robot: RobotStateSnapshot) -> str:
+    preview = build_order_preview(batch, records)
+    members = [records[member.taskId] for member in batch.tasks]
+    rows = ["=" * 50, "              DELIVERY BATCH MONITOR", "=" * 50, "",
+            f"Batch ID       : {batch.batchId}", f"Session ID     : {batch.sessionId}",
+            f"Total Tasks    : {len(batch.tasks)}", f"Order Policy   : {batch.orderPolicy.value}",
+            "Batch Valid    : YES", "", "[ORIGINAL REQUEST ORDER]"]
+    for item in sorted(preview, key=lambda item: item.sequenceIndex):
+        rows.append(f"{item.sequenceIndex + 1}. {item.documentText} -> {item.destinationText} — {item.priority.value} "
+                    f"(taskId={item.taskId}; sequenceIndex={item.sequenceIndex}; destinationId={item.destinationId})")
+    for member, record in zip(batch.tasks, members):
+        task = record.lifecycle
+        intent = task.resolvedIntent
+        rows.extend([
+            "", "-" * 50, f"TASK {member.sequenceIndex + 1}", "-" * 50,
+            f"Sequence Index : {member.sequenceIndex}", f"Task ID        : {task.taskId}",
+            f"Document       : {intent.document.originalText or 'UNSPECIFIED'}",
+            f"Document ID    : {intent.document.documentId or 'UNKNOWN'}",
+            f"Recipient      : {intent.recipientText or 'UNSPECIFIED'}",
+            f"Destination    : {intent.destination.originalText}",
+            f"Destination ID : {intent.destination.locationId}",
+            f"Priority       : {intent.priority.value}", f"Lifecycle      : {task.state.value}",
+            f"Handoff        : {record.handoff.value}", f"Document Load  : {record.documentLoad.value}",
+            f"Lifecycle Source: {record.lifecycleSource.value}",
+            f"Handoff Source : {record.handoffSource.value}", f"Load Source    : {record.documentLoadSource.value}",
+        ])
+    rows.extend(["", "[ORDER PREVIEW — NOT EXECUTED]"])
+    for item in preview:
+        rows.append(f"{item.previewPosition}. {item.documentText} -> {item.destinationText} — {item.priority.value} "
+                    f"(taskId={item.taskId}; sequenceIndex={item.sequenceIndex}; destinationId={item.destinationId})")
+    def summary_source(sources: set[StateSource]) -> str:
+        return next(iter(sources)).value if len(sources) == 1 else "MIXED; inspect per-task sources"
+    accepted = "NO"
+    if all(record.handoff is TaskHandoffState.ACCEPTED for record in members):
+        accepted = "YES (" + summary_source({record.handoffSource for record in members}) + ")"
+    elif any(record.handoff is not TaskHandoffState.NOT_SENT for record in members):
+        accepted = "NOT_ALL_ACCEPTED; inspect per-task handoff/source"
+    documents = "NOT_CONFIRMED"
+    if all(record.documentLoad is DocumentLoadState.LOADED for record in members):
+        documents = "LOADED (" + summary_source({record.documentLoadSource for record in members}) + "); identity not verified"
+    execution = "NOT_STARTED" if all(record.lifecycle.state in {
+        TaskLifecycleState.READY, TaskLifecycleState.QUEUED, TaskLifecycleState.DRAFT,
+    } for record in members) else "PER_TASK; inspect lifecycle and source above"
+    load_states = {record.documentLoad for record in members}
+    load = next(iter(load_states)).value if len(load_states) == 1 else "MIXED; inspect per-task load/source"
+    rows.extend(["", "[EXECUTION STATUS]", "Scheduler      : NOT_IMPLEMENTED",
+                 f"Robot Accepted : {accepted}", f"Document Load  : {load}", f"Physical Delivery: {execution}",
+                 "", render_robot_state(robot), "", "[INTERPRETATION]",
+                 "Semantic Batch : VALID", f"Robot Accepted : {accepted}",
+                 f"Documents      : {documents}", f"Execution      : {execution}",
+                 "Physical capacity: UNKNOWN", "", "=" * 50])
+    return "\n".join(rows)

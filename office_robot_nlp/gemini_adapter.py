@@ -14,6 +14,10 @@ from office_robot_nlp.clu import (
     ConversationContext,
     LanguageUnderstandingResult,
     decode_language_understanding_result,
+    batch_semantic_context,
+)
+from office_robot_nlp.batch_schema import (
+    BATCH_TYPES, BUSY_POLICY_GUIDANCE, CLOSED_POLICY_GUIDANCE, TASK_PRIORITY_GUIDANCE, batch_properties,
 )
 from office_robot_nlp.domain.conversation import ConversationMode
 
@@ -72,7 +76,7 @@ def _parsed_intent_schema() -> dict[str, Any]:
             "destinationText": {"type": "string", "nullable": True},
             "documentText": {"type": "string", "nullable": True},
             "recipientText": {"type": "string", "nullable": True},
-            "priority": {"type": "string", "enum": ["LOW", "NORMAL", "HIGH"]},
+            "priority": {"type": "string", "enum": ["LOW", "NORMAL", "HIGH"], "description": TASK_PRIORITY_GUIDANCE},
             "constraints": {
                 "type": "object",
                 "properties": {
@@ -80,11 +84,13 @@ def _parsed_intent_schema() -> dict[str, Any]:
                         "type": "string",
                         "enum": ["WAIT", "ASK_USER"],
                         "nullable": True,
+                        "description": BUSY_POLICY_GUIDANCE,
                     },
                     "ifClosed": {
                         "type": "string",
                         "enum": ["WAIT", "RETRY", "ASK_USER"],
                         "nullable": True,
+                        "description": CLOSED_POLICY_GUIDANCE,
                     },
                 },
                 "required": ["ifBusy", "ifClosed"],
@@ -121,6 +127,7 @@ GEMINI_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
                 "UNKNOWN",
                 "SOCIAL",
                 "TASK_UPDATE",
+                *BATCH_TYPES,
             ],
         },
         "parsedIntent": _parsed_intent_schema(),
@@ -131,8 +138,10 @@ GEMINI_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
         "constraints": {"type": "object"},
         "field": {"type": "string", "enum": ["destination", "document"]},
         "value": {"type": "string"},
+        "itemIndex": {"type": "integer", "nullable": True},
         "decision": {"type": "string", "enum": ["WAIT", "RETRY", "CANCEL"]},
         "reason": {"type": "string", "nullable": True},
+        **batch_properties(),
     },
     "required": ["type"],
 }
@@ -142,6 +151,8 @@ def _semantic_context(context: ConversationContext) -> dict[str, object]:
     payload: dict[str, object] = {"state": context.mode.value}
     if context.mode is ConversationMode.AWAITING_TASK_INFORMATION:
         payload["awaitingField"] = context.awaitingField
+    elif context.mode is ConversationMode.AWAITING_BATCH_INFORMATION:
+        payload.update(batch_semantic_context(context))
     elif context.mode is ConversationMode.AWAITING_ROBOT_DECISION:
         payload["reason"] = context.decisionReason.value if context.decisionReason else None
         payload["allowedDecisions"] = [decision.value for decision in context.allowedDecisions]

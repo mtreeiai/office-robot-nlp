@@ -8,6 +8,9 @@ from typing import Any, Callable, Mapping, Protocol
 
 from office_robot_nlp.clu import ConversationContext
 from office_robot_nlp.dialogue_manager import (
+    BatchClarificationRequired,
+    BatchReady,
+    PendingCancelled,
     ClarificationRequired,
     DecisionReady,
     DialogueError,
@@ -19,9 +22,15 @@ from office_robot_nlp.dialogue_manager import (
 )
 from office_robot_nlp.gemini_adapter import GeminiConfig
 from office_robot_nlp.task_lifecycle import DeliveryTaskLifecycle, TaskLifecycleState
+from office_robot_nlp.domain.batch import DeliveryBatch
+from office_robot_nlp.order_preview import build_order_preview
+from office_robot_nlp.runtime_monitor import TaskMonitoringRecord
 
 
 class ResponseAct(str, Enum):
+    BATCH_RECORDED = "BATCH_RECORDED"
+    BATCH_CLARIFICATION = "BATCH_CLARIFICATION"
+    PENDING_CANCELLED = "PENDING_CANCELLED"
     GREETING = "GREETING"
     GREETING_WITH_PENDING_REQUEST = "GREETING_WITH_PENDING_REQUEST"
     ASK_DESTINATION = "ASK_DESTINATION"
@@ -61,6 +70,22 @@ class NaturalResponseGenerator(Protocol):
 
 
 def response_plan_for(result: DialogueResult) -> ResponsePlan:
+    if isinstance(result, BatchClarificationRequired):
+        return ResponsePlan(ResponseAct.BATCH_CLARIFICATION,
+                            {"question": result.responseText}, result.pending.awaitingField)
+    if isinstance(result, PendingCancelled):
+        return ResponsePlan(ResponseAct.PENDING_CANCELLED, {})
+    if isinstance(result, BatchReady):
+        return ResponsePlan(ResponseAct.BATCH_RECORDED, {
+            "tasks": [{"sequenceIndex": index, "documentText": intent.document.originalText,
+                       "recipientText": intent.recipientText, "destinationText": intent.destination.originalText,
+                       "destinationId": intent.destination.locationId, "priority": intent.priority.value}
+                      for index, intent in enumerate(result.resolvedIntents)],
+            "orderPolicy": result.draft.orderPolicy.value,
+            "orderPolicySelectedByUser": result.draft.orderConfirmed,
+            "lifecycleState": TaskLifecycleState.READY.value,
+            "robotAccepted": False, "documentLoadConfirmed": False, "capacityConfirmed": False,
+        })
     if isinstance(result, SocialAcknowledged):
         if result.pendingField:
             return ResponsePlan(
@@ -122,6 +147,21 @@ def response_plan_for(result: DialogueResult) -> ResponsePlan:
     return ResponsePlan(ResponseAct.UNSUPPORTED_REQUEST, {})
 
 
+def response_plan_for_registered_batch(
+    result: BatchReady, batch: DeliveryBatch, records: Mapping[str, TaskMonitoringRecord],
+) -> ResponsePlan:
+    """Add an actual task-ID preview after successful atomic registration."""
+    semantic_plan = response_plan_for(result)
+    preview = build_order_preview(batch, records)
+    return ResponsePlan(semantic_plan.act, {
+        **semantic_plan.facts,
+        "batchId": batch.batchId,
+        "taskIds": [member.taskId for member in batch.tasks],
+        "orderPolicy": batch.orderPolicy.value,
+        "orderPreview": [{**asdict(item), "priority": item.priority.value} for item in preview],
+    })
+
+
 def response_plan_for_lifecycle(task: DeliveryTaskLifecycle) -> ResponsePlan:
     facts = {
         "taskId": task.taskId,
@@ -152,6 +192,41 @@ class TemplateNaturalResponseGenerator:
     """Deterministic Vietnamese fallback that never invents facts."""
 
     def generate(self, plan: ResponsePlan, context: ConversationContext) -> str:
+        if plan.act is ResponseAct.BATCH_CLARIFICATION:
+            return plan.facts["question"]
+        if plan.act is ResponseAct.PENDING_CANCELLED:
+            return "Mình đã hủy yêu cầu đang chờ làm rõ. Các nhiệm vụ đã ghi nhận trước đó được giữ nguyên."
+        if plan.act is ResponseAct.BATCH_RECORDED:
+            items = []
+            urgent = []
+            for task in plan.facts["tasks"]:
+                recipient = f" cho {task['recipientText']}" if task["recipientText"] else ""
+                description = f"{task['documentText']}{recipient} đến {task['destinationText']}"
+                items.append(description)
+                if task["priority"] == "HIGH":
+                    urgent.append(description)
+            listing = ", ".join(items[:-1]) + " và " + items[-1] if len(items) > 1 else items[0]
+            selected = plan.facts.get("orderPolicySelectedByUser", False)
+            strict = plan.facts["orderPolicy"] == "STRICT_ORDER"
+            choice = ""
+            if selected:
+                choice = ("Đã chọn giữ đúng thứ tự bạn yêu cầu. " if strict
+                          else "Đã chọn giao theo mức ưu tiên. ")
+            response = choice + f"Mình đã ghi nhận {len(items)} nhiệm vụ: {listing}."
+            if urgent:
+                response += " Ưu tiên cao: " + "; ".join(urgent) + "."
+            if strict and not selected:
+                response += " Đã ghi nhận yêu cầu giữ đúng thứ tự bạn nêu."
+            preview = plan.facts.get("orderPreview")
+            if preview:
+                descriptions = [f"{item['documentText']} đến {item['destinationText']}" for item in preview]
+                sequence = descriptions[0] + " trước"
+                if len(descriptions) > 1:
+                    sequence += ", sau đó " + ", sau đó ".join(descriptions[1:])
+                policy = "giữ nguyên thứ tự yêu cầu" if strict else "theo mức ưu tiên"
+                response += f" Thứ tự dự kiến ({policy}) là: {sequence}."
+                response += " Việc thực hiện còn phụ thuộc điều kiện vận hành và hệ thống robot tiếp nhận."
+            return response
         if plan.act is ResponseAct.GREETING:
             return "Chào bạn! Tôi có thể hỗ trợ giao tài liệu trong văn phòng."
         if plan.act is ResponseAct.GREETING_WITH_PENDING_REQUEST:
@@ -212,6 +287,7 @@ class TemplateNaturalResponseGenerator:
 NLG_SYSTEM_INSTRUCTIONS = """You verbalize a safe response plan for an office delivery assistant.
 Speak naturally and concisely in Vietnamese. Use only the supplied facts.
 Do not invent destinations, recipient identities, actions, success, or robot state.
+Batch recording confirms semantics only, not robot acceptance, loading, capacity, or movement.
 READY does not mean STARTED. QUEUED does not mean NAVIGATING.
 ARRIVED does not mean COMPLETED. WAITING_FOR_RECIPIENT does not mean verified.
 DELIVERING does not mean completed. Never claim movement unless state is NAVIGATING.
@@ -272,6 +348,10 @@ def generate_with_fallback(
     fallback: NaturalResponseGenerator | None = None,
 ) -> str:
     fallback = fallback or TemplateNaturalResponseGenerator()
+    if plan.act in {ResponseAct.BATCH_RECORDED, ResponseAct.BATCH_CLARIFICATION, ResponseAct.PENDING_CANCELLED}:
+        # These confirmations must preserve every item/association and must not
+        # turn an unresolved allocation into model-invented physical copies.
+        return fallback.generate(plan, context)
     try:
         text = generator.generate(plan, context)
         if not _is_execution_safe(plan, text):
@@ -305,5 +385,6 @@ __all__ = [
     "TemplateNaturalResponseGenerator",
     "generate_with_fallback",
     "response_plan_for",
+    "response_plan_for_registered_batch",
     "response_plan_for_lifecycle",
 ]

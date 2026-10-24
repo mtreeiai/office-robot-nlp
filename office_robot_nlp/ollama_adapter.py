@@ -14,7 +14,9 @@ from office_robot_nlp.clu import (
     ConversationContext,
     LanguageUnderstandingResult,
     decode_language_understanding_result,
+    batch_semantic_context,
 )
+from office_robot_nlp.batch_schema import BATCH_TYPES, batch_properties
 from office_robot_nlp.domain.conversation import ConversationMode
 
 
@@ -94,7 +96,7 @@ OLLAMA_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
     "properties": {
         "type": {
             "type": "string",
-            "enum": ["TASK_COMMAND", "TASK_UPDATE", "CLARIFICATION_ANSWER", "ROBOT_DECISION", "SOCIAL", "UNKNOWN"],
+            "enum": ["TASK_COMMAND", "TASK_UPDATE", "CLARIFICATION_ANSWER", "ROBOT_DECISION", "SOCIAL", "UNKNOWN", *BATCH_TYPES],
         },
         "parsedIntent": _parsed_intent_schema(),
         "recipientText": {"type": "string", "nullable": True},
@@ -104,8 +106,10 @@ OLLAMA_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
         "constraints": {"type": "object"},
         "field": {"type": "string", "enum": ["destination", "document"]},
         "value": {"type": "string"},
+        "itemIndex": {"type": "integer", "nullable": True},
         "decision": {"type": "string", "enum": ["WAIT", "RETRY", "CANCEL"]},
         "reason": {"type": "string", "nullable": True},
+        **batch_properties(),
     },
     "required": ["type"],
 }
@@ -115,6 +119,8 @@ def _semantic_context(context: ConversationContext) -> dict[str, object]:
     payload: dict[str, object] = {"state": context.mode.value}
     if context.mode is ConversationMode.AWAITING_TASK_INFORMATION:
         payload["awaitingField"] = context.awaitingField
+    elif context.mode is ConversationMode.AWAITING_BATCH_INFORMATION:
+        payload.update(batch_semantic_context(context))
     elif context.mode is ConversationMode.AWAITING_ROBOT_DECISION:
         payload["reason"] = context.decisionReason.value if context.decisionReason else None
         payload["allowedDecisions"] = [decision.value for decision in context.allowedDecisions]

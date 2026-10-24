@@ -80,7 +80,8 @@ class OpenAIAdapterTests(unittest.TestCase):
         }
         self.assertEqual(
             set(branch_types),
-            {"TASK_COMMAND", "TASK_UPDATE", "CLARIFICATION_ANSWER", "ROBOT_DECISION", "SOCIAL", "UNKNOWN"},
+            {"TASK_COMMAND", "TASK_UPDATE", "CLARIFICATION_ANSWER", "ROBOT_DECISION", "SOCIAL", "UNKNOWN",
+             "BATCH_COMMAND", "BATCH_ORDER", "BATCH_CONFIRM", "CANCEL_PENDING"},
         )
         self.assertIn("parsedIntent", branch_types["TASK_COMMAND"]["properties"])
         self.assertIn("constraints", branch_types["TASK_COMMAND"]["properties"]["parsedIntent"]["properties"])

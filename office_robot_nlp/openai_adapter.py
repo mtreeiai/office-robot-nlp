@@ -18,7 +18,9 @@ from office_robot_nlp.clu import (
     ConversationContext,
     LanguageUnderstandingResult,
     decode_language_understanding_result,
+    batch_semantic_context,
 )
+from office_robot_nlp.batch_schema import batch_properties
 from office_robot_nlp.domain.conversation import ConversationMode
 
 
@@ -126,6 +128,11 @@ OPENAI_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
     "strict": True,
     "schema": {
         "oneOf": [
+            _result_branch("BATCH_COMMAND", batch_properties(json_schema=True),
+                           ["tasks", "orderPolicy", "allocationStatus"]),
+            _result_branch("BATCH_ORDER", {"orderPolicy": batch_properties()["orderPolicy"]}, ["orderPolicy"]),
+            _result_branch("BATCH_CONFIRM", {}, []),
+            _result_branch("CANCEL_PENDING", {}, []),
             _result_branch(
                 "TASK_COMMAND",
                 {"parsedIntent": _parsed_intent_schema()},
@@ -136,8 +143,9 @@ OPENAI_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
                 {
                     "field": {"type": "string", "enum": ["destination", "document"]},
                     "value": {"type": "string"},
+                    "itemIndex": {"type": ["integer", "null"]},
                 },
-                ["field", "value"],
+                ["field", "value", "itemIndex"],
             ),
             _result_branch(
                 "ROBOT_DECISION",
@@ -162,8 +170,9 @@ OPENAI_CLU_RESPONSE_SCHEMA: dict[str, Any] = {
                     "documentText": {"type": ["string", "null"]},
                     "priority": {"type": ["string", "null"], "enum": ["LOW", "NORMAL", "HIGH", None]},
                     "constraints": {"type": ["object", "null"]},
+                    "itemIndex": {"type": ["integer", "null"]},
                 },
-                ["recipientText", "destinationText", "documentText", "priority", "constraints"],
+                ["recipientText", "destinationText", "documentText", "priority", "constraints", "itemIndex"],
             ),
         ]
     },
@@ -208,6 +217,8 @@ def _semantic_context(context: ConversationContext) -> dict[str, object]:
     payload: dict[str, object] = {"state": context.mode.value}
     if context.mode is ConversationMode.AWAITING_TASK_INFORMATION:
         payload["awaitingField"] = context.awaitingField
+    elif context.mode is ConversationMode.AWAITING_BATCH_INFORMATION:
+        payload.update(batch_semantic_context(context))
     elif context.mode is ConversationMode.AWAITING_ROBOT_DECISION:
         payload["reason"] = context.decisionReason.value if context.decisionReason else None
         payload["allowedDecisions"] = [decision.value for decision in context.allowedDecisions]
