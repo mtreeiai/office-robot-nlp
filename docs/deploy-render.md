@@ -221,6 +221,8 @@ Render the unchanged unified single/batch envelope and distinguish original orde
 
 ## Troubleshooting
 
+For a persistent message-level `PROVIDER_UNAVAILABLE` despite successful health/session calls, follow [Gemini 503 diagnostics](diagnose-gemini-503.md). The Gemini parser logs only safe failure metadata at WARNING level; it does not expose upstream details to clients.
+
 | Symptom | Check / action |
 | --- | --- |
 | `ModuleNotFoundError` | Correct repository/root directory; commit all package/application modules; build with `pip install -r requirements.txt`; do not install only dev fragments |

@@ -1,7 +1,9 @@
 """Gemini Interactions API adapter for the provider-independent CLU boundary."""
 
 import json
+import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -66,6 +68,79 @@ class InvalidGeminiResultError(GeminiAdapterError):
 
 
 RequestFunction = Callable[[str, Mapping[str, str], bytes, float], object]
+
+
+_LOGGER = logging.getLogger(__name__)
+_SAFE_PROVIDER_CODES = frozenset({
+    "INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED", "NOT_FOUND",
+    "RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL", "UNKNOWN", "DEADLINE_EXCEEDED",
+    "CANCELLED", "FAILED_PRECONDITION", "OUT_OF_RANGE", "UNIMPLEMENTED", "ABORTED",
+    "DATA_LOSS", "API_KEY_INVALID", "API_KEY_EXPIRED", "SERVICE_DISABLED",
+})
+
+
+class _HttpResponseBody(bytes):
+    """Keep the successful HTTP status through decoding; still a bytes response."""
+
+    def __new__(cls, body: bytes, status_code: int):
+        response = super().__new__(cls, body)
+        response.status_code = status_code
+        return response
+
+
+def _safe_provider_code(value):
+    if type(value) is int and 0 <= value <= 599:
+        return value
+    if isinstance(value, str) and value in _SAFE_PROVIDER_CODES:
+        return value
+    return None
+
+
+def _log_provider_failure(config, error: GeminiAdapterError, response_status: int | None) -> None:
+    """Emit only bounded metadata and fixed summaries, never exception messages.
+
+    Upstream messages/decoder errors can echo credentials or user input. Avoid
+    redacting free text heuristically: none of that text enters a log record.
+    """
+    status = getattr(error, "status_code", None) or response_status
+    status = status if type(status) is int and 100 <= status <= 599 else None
+    cause = error.__cause__ or error
+    if isinstance(cause, urllib.error.URLError) and isinstance(cause.reason, BaseException):
+        cause = cause.reason
+    if isinstance(cause, TimeoutError):
+        summary = "connection_timeout"
+    elif isinstance(error, InvalidGeminiResultError):
+        summary = "structured_output_invalid"
+    elif isinstance(error, MalformedGeminiOutputError):
+        summary = ("response_json_decode_failed" if isinstance(cause, (ValueError, UnicodeError))
+                   else "unexpected_response_shape")
+    elif status is not None:
+        summary = {
+            400: "invalid_model_or_request", 401: "api_key_invalid_or_missing",
+            403: "permission_denied_or_api_key_rejected", 404: "model_or_endpoint_not_found",
+            429: "rate_limit_or_quota_exhausted", 503: "upstream_unavailable",
+        }.get(status, "upstream_http_error")
+    elif isinstance(cause, (urllib.error.URLError, OSError)):
+        summary = "connection_error"
+    else:
+        summary = "unexpected_provider_error"
+    model = config.model
+    # Model is configuration, not response text. Still reject control characters,
+    # URLs/queries and accidentally embedded credentials before recording it.
+    secrets = (config.api_key, os.environ.get("API_ACCESS_TOKEN", ""))
+    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", model)
+            or any(secret and secret in model for secret in secrets)):
+        model = "[REDACTED]"
+    exception_class = type(cause).__name__
+    if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", exception_class)
+            or any(secret and secret in exception_class for secret in secrets)):
+        exception_class = "Exception"
+    _LOGGER.warning("%s", json.dumps({
+        "provider": "gemini", "model": model, "upstream_http_status": status,
+        "provider_code": _safe_provider_code(getattr(error, "provider_code", None)),
+        "provider_status": _safe_provider_code(getattr(error, "provider_status", None)),
+        "exception_class": exception_class, "summary": summary,
+    }, sort_keys=True), exc_info=False, stack_info=False)
 
 
 def _parsed_intent_schema() -> dict[str, Any]:
@@ -194,7 +269,7 @@ def _http_request(
     request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read()
+            return _HttpResponseBody(response.read(), response.status)
     except urllib.error.HTTPError as error:
         status, code, provider_message, message = _provider_error_details(error.read())
         raise GeminiProviderRequestError(
@@ -290,19 +365,25 @@ class GeminiLanguageUnderstandingParser:
             "x-goog-api-key": self._config.api_key,
             "Content-Type": "application/json",
         }
+        response_status = None
         try:
-            raw_response = self._request(
-                self._config.endpoint, headers, body, self._config.timeout
-            )
-        except GeminiAdapterError:
+            try:
+                raw_response = self._request(
+                    self._config.endpoint, headers, body, self._config.timeout
+                )
+            except GeminiAdapterError:
+                raise
+            except Exception as error:
+                raise GeminiProviderRequestError("Gemini provider request failed") from error
+            response_status = getattr(raw_response, "status_code", None)
+            content = self._extract_output_text(self._decode_response(raw_response))
+            decoded = decode_language_understanding_result(content, context)
+            if decoded.result is None:
+                raise InvalidGeminiResultError(decoded.errors or ("INVALID_CLU_OUTPUT",))
+            return decoded.result
+        except GeminiAdapterError as error:
+            _log_provider_failure(self._config, error, response_status)
             raise
-        except Exception as error:
-            raise GeminiProviderRequestError("Gemini provider request failed") from error
-        content = self._extract_output_text(self._decode_response(raw_response))
-        decoded = decode_language_understanding_result(content, context)
-        if decoded.result is None:
-            raise InvalidGeminiResultError(decoded.errors or ("INVALID_CLU_OUTPUT",))
-        return decoded.result
 
     @staticmethod
     def _decode_response(raw_response: object) -> object:
