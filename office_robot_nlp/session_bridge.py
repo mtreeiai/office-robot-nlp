@@ -130,6 +130,15 @@ class NlpSessionBridge:
         with session.lock:
             return task_snapshot(session.application, session.application.tasks[task_id])
 
+    def get_message_result(self, session_id: str, message_id: str) -> MessageResponse:
+        """Read a successful semantic snapshot for explicit operational Draft intake."""
+        session = self._lookup(self._sessions, session_id, "SESSION")
+        with session.lock:
+            entry = session.messages.get(message_id)
+            if entry is None or entry.response is None:
+                raise BridgeError("MESSAGE_NOT_FOUND", "Successful conversation message not found.")
+            return entry.response.model_copy(deep=True)
+
     def get_batch(self, batch_id: str) -> BatchSnapshot:
         session = self._lookup(self._batch_owners, batch_id, "BATCH")
         with session.lock:

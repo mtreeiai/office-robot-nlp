@@ -1,0 +1,3 @@
+# Optional operational backend; the existing NLP-only deployment stays usable.
+-r requirements.txt
+psycopg[binary]==3.3.9

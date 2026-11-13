@@ -1,5 +1,7 @@
 # Office Robot NLP HTTP integration contract v1
 
+The optional [Office Robot Integration v1 operational backend](office-robot-integration-v1.md) adds separate PostgreSQL-backed request/gateway endpoints when explicitly configured. The NLP field shapes below are retained. Historical no-execution/in-memory-only statements in this Phase 8C document describe the NLP-only profile, not the new operational backend. For authoritative queued/execution status use the operational endpoints; original NLP READY snapshots do not grant execution authority.
+
 Phase 8C.1-A. The PyQt5 client communicates with a separate NLP process using UTF-8 JSON over HTTP. The NLP process has no PyQt5 or ROS2 dependency and does not modify the [robot repository](https://github.com/buinhuduc2006hd-star/office-robot).
 
 ## Start on Windows

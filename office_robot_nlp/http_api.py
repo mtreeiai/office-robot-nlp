@@ -90,6 +90,7 @@ def validate_render_environment() -> None:
 _ERROR_STATUS = {
     "SESSION_NOT_FOUND": 404, "TASK_NOT_FOUND": 404, "BATCH_NOT_FOUND": 404,
     "MESSAGE_ID_CONFLICT": 409, "PROVIDER_UNAVAILABLE": 503, "INVALID_MESSAGE": 422,
+    "MESSAGE_NOT_FOUND": 404,
 }
 
 
@@ -97,7 +98,7 @@ def error_response(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
 
 
-def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | None = None) -> FastAPI:
+def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | None = None, operations=None) -> FastAPI:
     if running_on_render():
         # Uvicorn --factory invokes this path too. Explicit local settings cannot
         # bypass Render's mandatory public binding/token/configuration checks.
@@ -110,6 +111,13 @@ def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | N
     bridge = bridge or NlpSessionBridge()
     api = FastAPI(title="Office Robot NLP", version="1.0", debug=False,
                   docs_url=None, redoc_url=None, openapi_url=None)
+    if operations is None and os.environ.get("DATABASE_URL"):
+        from office_robot_backend.repository import PostgresRepository
+        from office_robot_backend.service import DeliveryService
+        operations = DeliveryService(PostgresRepository(os.environ["DATABASE_URL"]))
+    if operations is not None:
+        from office_robot_backend.http import install_operations
+        install_operations(api, bridge, operations)
 
     @api.middleware("http")
     async def boundary(request: Request, call_next):

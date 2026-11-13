@@ -1,0 +1,12 @@
+{
+  "baseRevision": "48f90ce027c99bc864d666dbf047dbd86e2d82e1",
+  "files": {
+    "src/robot_interfaces/action/DeliveryGo.action": null,
+    "src/robot_interfaces/CMakeLists.txt": "2092e545dd33e71b8b63c7f35f13e59f72acbe51b3d016d60b9e5382afc030a5",
+    "src/robot_interfaces/package.xml": "8fb42ab7d91c62029749abbb49919a273807e7baf6b8c1b7d6761d238139aa64",
+    "src/robot_mission_control/package.xml": "26eb03eb56c7e12e33e0365bf2f2415d1f14bb1f1dbc9b386082d0ef92ff7df4",
+    "src/robot_mission_control/robot_mission_control/mission_controller_node.py": "c07e6a13bb5c41294a8630580c4625cf8520246a7af5a66183f2d3bc74702d1c",
+    "src/robot_navigation_manager/package.xml": "48ab22e8721e6fa26d25eba58b618bf1632c8c395cac271a1ad6a66723d1e7d2",
+    "src/robot_navigation_manager/robot_navigation_manager/navigation_manager_node.py": "b736b8952b9824d0af0f03be492c7e54789af482ae1c9dcbad8340b6215eeee5"
+  }
+}

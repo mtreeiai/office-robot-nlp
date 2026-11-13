@@ -7,7 +7,7 @@ services:
     plan: free
     numInstances: 1
     autoDeployTrigger: "off"
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-operations.txt
     startCommand: uvicorn office_robot_nlp.http_api:create_api --factory --host 0.0.0.0 --port "$PORT" --workers 1 --no-access-log --no-proxy-headers
     envVars:
       - key: PYTHON_VERSION

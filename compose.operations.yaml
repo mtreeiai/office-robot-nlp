@@ -1,0 +1,19 @@
+# Local PostgreSQL development only. Supply POSTGRES_PASSWORD privately.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: office_robot
+      POSTGRES_DB: office_robot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD privately}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - office_robot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U office_robot -d office_robot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  office_robot_pgdata:
