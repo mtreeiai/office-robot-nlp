@@ -47,13 +47,15 @@ _STATUSES = {
 
 
 class NlpSessionBridge:
-    def __init__(self, application_factory: Callable[[str], TextConversationApplication] | None = None):
+    def __init__(self, application_factory: Callable[[str], TextConversationApplication] | None = None,
+                 response_enricher: Callable[[MessageResponse], MessageResponse] | None = None):
         self._factory = application_factory or (lambda session_id: create_application(session_id=session_id))
         self._lock = RLock()
         self._sessions: dict[str, Session] = {}
         self._allocated_session_ids: set[str] = set()
         self._task_owners: dict[str, Session] = {}
         self._batch_owners: dict[str, Session] = {}
+        self.response_enricher = response_enricher
 
     def create_session(self) -> SessionResponse:
         # UUID allocation and publication share a lock, including the collision check.
@@ -113,6 +115,8 @@ class NlpSessionBridge:
                 response = MessageResponse(sessionId=session_id, messageId=message_id,
                                            dialogueStatus=_STATUSES[type(turn.output)], reply=turn.responseText,
                                            batch=envelope)
+                if self.response_enricher is not None:
+                    response = self.response_enricher(response)
                 with self._lock:
                     # Check every ID before publishing either index. No provider calls under this lock.
                     if any(key in self._task_owners and self._task_owners[key] is not session for key in app.tasks):

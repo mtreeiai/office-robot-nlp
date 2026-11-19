@@ -1,0 +1,6 @@
+{
+  "name": "office-room-calendar-assets",
+  "private": true,
+  "scripts": {"build": "node build.cjs"},
+  "dependencies": {"fullcalendar": "6.1.22"}
+}

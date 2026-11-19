@@ -97,7 +97,7 @@ def error_response(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
 
 
-def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | None = None) -> FastAPI:
+def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | None = None, calendar_service=None, calendar_settings=None) -> FastAPI:
     if running_on_render():
         # Uvicorn --factory invokes this path too. Explicit local settings cannot
         # bypass Render's mandatory public binding/token/configuration checks.
@@ -110,10 +110,29 @@ def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | N
     bridge = bridge or NlpSessionBridge()
     api = FastAPI(title="Office Robot NLP", version="1.0", debug=False,
                   docs_url=None, redoc_url=None, openapi_url=None)
+    from office_room_calendar.config import flag
+    calendar_enabled = calendar_service is not None or flag("CALENDAR_ENABLED")
+    if calendar_enabled:
+        from office_room_calendar.config import CalendarSettings
+        from office_room_calendar.database import CalendarDatabase
+        from office_room_calendar.service import CalendarService
+        from office_room_calendar.availability import AvailabilityService
+        from office_room_calendar.http import install_calendar
+        from office_room_calendar.integration import enrich_message
+        calendar_settings = calendar_settings or CalendarSettings.from_environment()
+        calendar_service = calendar_service or CalendarService(CalendarDatabase(calendar_settings.database_url), calendar_settings)
+        availability = AvailabilityService(calendar_service.database, calendar_settings, calendar_service.clock)
+        install_calendar(api, calendar_service, availability, calendar_settings)
+        if calendar_settings.nlp_enabled:
+            bridge.response_enricher = enrich_message(availability, calendar_settings.timezone)
+    elif flag("CALENDAR_NLP_ENABLED"):
+        raise ValueError("CALENDAR_NLP_ENABLED requires CALENDAR_ENABLED")
 
     @api.middleware("http")
     async def boundary(request: Request, call_next):
-        if settings.access_token is not None:
+        calendar_path = (request.url.path == "/calendar" or request.url.path.startswith("/calendar/")
+                         or request.url.path.startswith("/v1/calendar/") or request.url.path.startswith("/v1/robot/availability/"))
+        if settings.access_token is not None and not (calendar_enabled and calendar_path):
             supplied = request.headers.get("authorization", "")
             expected = f"Bearer {settings.access_token}"
             if not compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
@@ -147,7 +166,10 @@ def create_api(bridge: NlpSessionBridge | None = None, settings: ApiSettings | N
 
     @api.post("/v1/sessions/{sessionId}/messages", response_model=MessageResponse, responses=errors)
     def message(sessionId: str, body: MessageRequest):
-        return bridge.handle_user_message(sessionId, body.messageId, body.text)
+        response = bridge.handle_user_message(sessionId, body.messageId, body.text)
+        if calendar_enabled and calendar_settings.nlp_enabled:
+            return JSONResponse(response.model_dump(mode="json"))
+        return response
 
     @api.get("/v1/tasks/{taskId}", response_model=TaskSnapshot, responses=errors)
     def get_task(taskId: str):

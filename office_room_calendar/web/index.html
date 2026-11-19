@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lịch phòng · Office Robot</title>
+  <link rel="stylesheet" href="/calendar/app.css">
+  <script src="/calendar/vendor/fullcalendar.min.js" defer></script>
+  <script src="/calendar/vendor/fullcalendar-vi.min.js" defer></script>
+  <script src="/calendar/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/calendar/"><span class="brand-mark">◈</span> OFFICE<span>ROOMS</span></a>
+      <div class="sidebar-label">KHÔNG GIAN LÀM VIỆC</div>
+      <nav aria-label="Điều hướng">
+        <button data-page="dashboard" class="nav-button active">◫ <span>Tổng quan</span></button>
+        <button data-page="calendar" class="nav-button">▦ <span>Lịch đặt phòng</span></button>
+        <button data-page="rooms" class="nav-button" id="admin-nav" hidden>⚙ <span>Quản lý phòng</span></button>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot"></span> Office Room Calendar<div>Dữ liệu lịch · không phải cảm biến hiện diện</div></div>
+    </aside>
+    <main>
+      <header class="topbar"><span>OFFICE / <strong id="breadcrumb">Tổng quan</strong></span><div id="account" hidden><span id="account-name"></span><button id="logout" class="text-button">Đăng xuất</button></div></header>
+      <section id="login-page" class="login-layout">
+        <div class="login-intro"><div class="eyebrow">LÀM VIỆC CÙNG NHAU, DỄ DÀNG HƠN</div><h1>Mỗi cuộc họp,<br>một không gian<br><em>phù hợp.</em></h1><p>Xem lịch, tìm phòng và sắp xếp ngày làm việc của bạn trong cùng một nơi.</p><div class="intro-note">01 — 07 <span>Bảy địa điểm. Một lịch chung.</span></div></div>
+        <form id="login-form" class="panel login-panel"><div class="eyebrow">CHÀO MỪNG TRỞ LẠI</div><h2>Đăng nhập</h2><p class="muted">Sử dụng tài khoản Calendar do quản trị viên cấp.</p><label>Email<input name="email" type="email" autocomplete="username" required maxlength="254"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><button class="primary" type="submit">Vào không gian làm việc <span>→</span></button><p class="fine-print">Robot sử dụng API chỉ đọc với thông tin xác thực riêng.</p></form>
+      </section>
+      <div id="workspace" hidden>
+        <section class="page-heading"><div><div class="eyebrow">KHÔNG GIAN / THỜI GIAN / CON NGƯỜI</div><h1 id="page-title">Một ngày làm việc nhịp nhàng.</h1><p id="page-subtitle" class="muted">Tình trạng lịch của bảy địa điểm, được cập nhật từ server.</p></div><button id="new-booking" class="primary">＋ Đặt lịch mới</button></section>
+        <div class="context-bar"><span id="today-label"></span><span id="timezone-label"></span><button id="refresh" class="text-button">↻ Làm mới</button></div>
+        <section id="dashboard-page"><div class="metrics"><div><span>Địa điểm</span><strong id="metric-total">—</strong></div><div><span>Lịch rảnh hiện tại</span><strong id="metric-free">—</strong></div><div><span>Có lịch bận</span><strong id="metric-busy">—</strong></div><div><span>Cho phép đặt lịch</span><strong id="metric-bookable">—</strong></div></div><div class="section-head"><h2>Các phòng trong văn phòng</h2><span id="updated-label" class="muted"></span></div><div id="room-grid" class="room-grid" aria-live="polite"></div></section>
+        <section id="calendar-page" hidden><div class="panel calendar-panel"><div class="calendar-filter"><label>Phòng<select id="calendar-room"><option value="">Tất cả phòng</option></select></label><span class="muted">Chọn khoảng giờ để đặt lịch · chọn cuộc họp để xem / sửa</span></div><div id="calendar-view"></div></div></section>
+        <section id="rooms-page" hidden><div class="panel"><h2>Thiết lập phòng &amp; chính sách</h2><p class="muted">Quyền đặt lịch độc lập với chính sách giao tài liệu. Không chỉnh sửa dữ liệu điều hướng ở đây.</p><div id="room-management"></div></div></section>
+        <p class="evidence-note">FREE chỉ có nghĩa không có lịch bận được đăng ký. Kết quả lịch không xác nhận có người nhận tài liệu và không cấp quyền Nav2.</p>
+      </div>
+      <div id="notice" class="notice" role="status" hidden></div>
+    </main>
+  </div>
+  <dialog id="booking-dialog"><form id="booking-form"><div class="dialog-heading"><div><div class="eyebrow">LỊCH LÀM VIỆC</div><h2 id="booking-title">Đặt lịch mới</h2></div><button type="button" data-close="booking-dialog" class="icon-button" aria-label="Đóng">×</button></div><input type="hidden" name="bookingId"><input type="hidden" name="revision"><label>Tên cuộc họp<input name="title" required maxlength="160"></label><label>Phòng<select name="roomId" required></select></label><div class="form-row"><label>Bắt đầu<input name="startAt" type="datetime-local" required></label><label>Kết thúc<input name="endAt" type="datetime-local" required></label></div><p id="form-zone" class="fine-print"></p><label id="repeat-label">Lặp lại hằng tuần<select name="weeks"><option value="1">Không lặp lại</option><option value="2">2 tuần</option><option value="4">4 tuần</option><option value="8">8 tuần</option><option value="12">12 tuần</option></select></label><p id="booking-detail" class="fine-print"></p><div class="dialog-actions"><button id="cancel-booking" type="button" class="danger" hidden>Hủy lịch</button><button type="button" data-close="booking-dialog" class="secondary">Đóng</button><button id="save-booking" type="submit" class="primary">Lưu lịch</button></div></form></dialog>
+  <dialog id="room-dialog"><form id="room-form"><div class="dialog-heading"><h2>Cấu hình phòng</h2><button type="button" data-close="room-dialog" class="icon-button" aria-label="Đóng">×</button></div><input type="hidden" name="roomId"><input type="hidden" name="version"><label>Tên hiển thị<input name="displayName" required maxlength="120"></label><label>Mô tả<textarea name="description" maxlength="1000"></textarea></label><label class="checkbox"><input name="enabled" type="checkbox">Địa điểm đang hoạt động</label><label class="checkbox"><input name="bookable" type="checkbox">Đã được duyệt cho phép đặt lịch</label><label>Chính sách giao tài liệu<select name="deliveryPolicy"><option>BLOCK_WHEN_BUSY</option><option>ALLOW_DOOR_HANDOFF</option><option>BUSINESS_HOURS_ONLY</option><option>MANAGER_APPROVAL</option><option>DISABLED</option></select></label><label>Múi giờ chính sách<input name="timezone" required placeholder="Asia/Ho_Chi_Minh"></label><label>Giờ làm việc (JSON, thứ Hai=0 … Chủ nhật=6)<textarea name="workingHours" rows="4" placeholder='{"0":[["08:00","17:00"]]}'></textarea></label><div class="dialog-actions"><button type="button" data-close="room-dialog" class="secondary">Đóng</button><button type="submit" class="primary">Lưu cấu hình</button></div></form></dialog>
+</body>
+</html>
