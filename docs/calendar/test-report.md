@@ -1,5 +1,7 @@
 # Verification and diff report
 
+This is the historical Phase 0–6 report. For the additive execution contract, current regression counts and subsequent diff, see [Phase 7A server report](phase-7a-server-report.md).
+
 Date: 2026-11-19. Windows / Python 3.11.9; PostgreSQL 17 Alpine (dedicated loopback Docker database); FastAPI 0.151.0; Playwright 1.58.0 / Chromium 145. Branch `feature/office-room-calendar`, created directly from fetched `origin/main` commit `1b30c3059a44ab6572c8af16694914d0fb18d93f`.
 
 ## Actual results

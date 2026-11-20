@@ -1,6 +1,8 @@
 # Robot integration guide — read-only calendar
 
-This module provides calendar evidence. It has not added a scheduler, ROS node, Nav2 hook or robot-side enforcement. Existing `TASK_READY` means the same thing as before; it is not evidence that the calendar permitted execution.
+This module provides calendar evidence. It has not added a scheduler, ROS node, Nav2 hook or robot-side enforcement. Existing `TASK_READY` means the same thing as before; it is not evidence that the calendar permitted execution. With NLP enrichment enabled, executionDecisions explicitly remains PENDING_AVAILABILITY_CHECK/allowed=false per task until a separate arrival-window check is consumed by the Robot. The Server does not persist or grant robot execution authorization.
+
+Phase 7A staging target: `https://office-robot-nlp-1.onrender.com` (deployment not verified by local tests). See [execution contract](execution-contract.md), [Robot team handoff](robot-team-handoff.md) and [owner deployment/smoke instructions](phase-7a-deployment.md).
 
 ## Credentials / connection
 
@@ -50,7 +52,7 @@ See [complete response/error contract](api-contract.md). Same-machine smoke is v
 5. Calendar BUSY can coexist with ALLOW under ALLOW_DOOR_HANDOFF. FREE under MANAGER_APPROVAL does not allow delivery. Keep calendarStatus and deliveryDecision separate.
 6. Any newer version invalidates old evidence, even before TTL expiry. The API cannot lock out a write that occurs after its response; integrate robot-side rechecks and operator policy accordingly. TTL is not a reservation or permanent navigation permit.
 
-NLP enrichment is advisory and PRELIMINARY. Its message replay cache intentionally returns exactly the original evidence; query this independent API for freshness instead of resending speech with the same message ID. No task registration, priority or order policy changes occur in Calendar.
+NLP enrichment is advisory and PRELIMINARY. Its message replay cache intentionally returns exactly the original evidence and executionDecisions; query this independent API for freshness instead of resending speech with the same message ID. No task registration, priority or order policy changes occur in Calendar. Match each advisory and stage entry to batch.tasks by exact taskId, including multiple tasks with the same room. The final read API accepts/returns roomId, not taskId; retain the requesting task and window locally for correlation, without adding unsupported fields to the strict request payload.
 
 ## Joint staging acceptance
 

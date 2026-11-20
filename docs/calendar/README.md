@@ -19,5 +19,9 @@ Calendar evidence does not prove physical occupancy or grant navigation permissi
 | [Robot guide](robot-integration.md) | Remote HTTPS checks, freshness and fake robot client |
 | [Phase reports](phase-reports.md) | Files, input → processing → output, verification and remaining work per phase |
 | [Test report](test-report.md) | Actual results, limits and diff summary |
+| [Execution contract](execution-contract.md) | Phase 7A preliminary execution state and actual single/batch DTO examples |
+| [Robot team handoff](robot-team-handoff.md) | Staging endpoints, decision mapping and Robot team's remaining work |
+| [Phase 7A deployment](phase-7a-deployment.md) | Owner-only deploy and smoke steps; no automatic deployment |
+| [Phase 7A report](phase-7a-server-report.md) | Audit, minimal diff and updated server verification |
 
 Existing `render.yaml` and NLP-only runtime requirements are unchanged. Future staging setup needs explicit calendar dependencies and a separate database; this task has not deployed it.

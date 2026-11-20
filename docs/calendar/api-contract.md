@@ -92,9 +92,13 @@ TTL defaults to 30 seconds (config range 1–60), capped by window end; UNKNOWN 
 
 ## Optional NLP integration
 
-`CALENDAR_NLP_ENABLED=false` by default: exact original message envelope. Enabled with Calendar: adds `roomAvailability`, an array with one evidence object per ready-envelope task plus taskId. Existing task/batch IDs/fields/constraints/priority/order/sequence/registration/dialogueStatus stay unchanged. Clarification/other turns without a ready envelope return an empty array.
+`CALENDAR_NLP_ENABLED=false` by default: exact original message envelope. Enabled with Calendar: adds `roomAvailability` and `executionDecisions`, arrays with one entry per ready-envelope task. Existing task/batch IDs/fields/constraints/priority/order/sequence/registration/dialogueStatus stay unchanged. Clarification/other turns without a ready envelope return two empty arrays.
 
-Vietnamese feedback is appended deterministically after resolution, with busy end/next slot and estimate caveat. No live calendar data is sent to Gemini. Message retries replay exactly the original response, including expired evidence; use the separate API to refresh. Existing task/batch snapshot DTOs remain unchanged.
+Each execution entry is `{"taskId":"<existing taskId>","roomId":"01","status":"PENDING_AVAILABILITY_CHECK","allowed":false,"reasonCode":"ARRIVAL_WINDOW_REQUIRED"}`. It indicates the preliminary execution stage, independently of the advisory deliveryDecision. It cannot authorize execution, including if advisory logic returns ALLOW. Both arrays join to `batch.tasks` by exact taskId, never just roomId. Same-room tasks retain separate entries. Single tasks still use `batch` with null batchId/orderPolicy and one task, not a new top-level task object.
+
+Vietnamese feedback is appended deterministically after resolution, with busy end/next slot and estimate caveat. No live calendar data is sent to Gemini. Message retries replay exactly the original response, including expired evidence and pending executionDecisions; use the separate API to refresh. The final endpoint does not update or authorize cached NLP responses. Existing task/batch snapshot DTOs remain unchanged.
+
+Full actual DTO examples and association rules: [execution contract](execution-contract.md), [Robot team handoff](robot-team-handoff.md). Zero-padded spoken aliases (e.g. phòng 01) are accepted alongside existing names; canonical IDs remain string 01–07.
 
 ## Errors
 

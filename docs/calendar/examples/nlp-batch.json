@@ -1,0 +1,175 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/v1/sessions/session_22222222222242228222222222222222/messages",
+    "body": {
+      "messageId": "m1",
+      "text": "Giao hợp đồng đến phòng 2, báo cáo đến phòng 5 và hồ sơ đến phòng 7. Ưu tiên hồ sơ trước."
+    }
+  },
+  "response": {
+    "sessionId": "session_22222222222242228222222222222222",
+    "messageId": "m1",
+    "dialogueStatus": "BATCH_READY",
+    "reply": "Mình đã ghi nhận 3 nhiệm vụ: hợp đồng đến phòng 2, báo cáo đến phòng 5 và hồ sơ đến phòng 7. Ưu tiên cao: hồ sơ đến phòng 7. Thứ tự dự kiến (theo mức ưu tiên) là: hồ sơ đến phòng 7 trước, sau đó hợp đồng đến phòng 2, sau đó báo cáo đến phòng 5. Việc thực hiện còn phụ thuộc điều kiện vận hành và hệ thống robot tiếp nhận.\nPhòng 02 không có lịch bận trong khoảng giao nhận đã kiểm tra. Đây là kiểm tra sơ bộ bằng thời gian di chuyển ước tính; cần kiểm tra lại với khoảng đến và bàn giao thực tế trước khi thực thi. Lịch không xác nhận phòng trống người hay cấp quyền điều hướng.\nPhòng 05 không có lịch bận trong khoảng giao nhận đã kiểm tra. Đây là kiểm tra sơ bộ bằng thời gian di chuyển ước tính; cần kiểm tra lại với khoảng đến và bàn giao thực tế trước khi thực thi. Lịch không xác nhận phòng trống người hay cấp quyền điều hướng.\nPhòng 07 không có lịch bận trong khoảng giao nhận đã kiểm tra. Đây là kiểm tra sơ bộ bằng thời gian di chuyển ước tính; cần kiểm tra lại với khoảng đến và bàn giao thực tế trước khi thực thi. Lịch không xác nhận phòng trống người hay cấp quyền điều hướng.",
+    "batch": {
+      "batchId": "batch_session_22222222222242228222222222222222_001",
+      "orderPolicy": "PRIORITY",
+      "tasks": [
+        {
+          "taskId": "task_session_22222222222242228222222222222222_001",
+          "sequenceIndex": 0,
+          "documentText": "hợp đồng",
+          "documentId": null,
+          "recipientText": null,
+          "destinationText": "phòng 2",
+          "destinationId": "02",
+          "priority": "NORMAL",
+          "constraints": {
+            "ifBusy": null,
+            "ifClosed": null
+          },
+          "lifecycle": "READY",
+          "handoff": "NOT_SENT",
+          "documentLoad": "UNCONFIRMED"
+        },
+        {
+          "taskId": "task_session_22222222222242228222222222222222_002",
+          "sequenceIndex": 1,
+          "documentText": "báo cáo",
+          "documentId": null,
+          "recipientText": null,
+          "destinationText": "phòng 5",
+          "destinationId": "05",
+          "priority": "NORMAL",
+          "constraints": {
+            "ifBusy": null,
+            "ifClosed": null
+          },
+          "lifecycle": "READY",
+          "handoff": "NOT_SENT",
+          "documentLoad": "UNCONFIRMED"
+        },
+        {
+          "taskId": "task_session_22222222222242228222222222222222_003",
+          "sequenceIndex": 2,
+          "documentText": "hồ sơ",
+          "documentId": null,
+          "recipientText": null,
+          "destinationText": "phòng 7",
+          "destinationId": "07",
+          "priority": "HIGH",
+          "constraints": {
+            "ifBusy": null,
+            "ifClosed": null
+          },
+          "lifecycle": "READY",
+          "handoff": "NOT_SENT",
+          "documentLoad": "UNCONFIRMED"
+        }
+      ],
+      "orderPreview": [
+        {
+          "position": 0,
+          "taskId": "task_session_22222222222242228222222222222222_003"
+        },
+        {
+          "position": 1,
+          "taskId": "task_session_22222222222242228222222222222222_001"
+        },
+        {
+          "position": 2,
+          "taskId": "task_session_22222222222242228222222222222222_002"
+        }
+      ]
+    },
+    "roomAvailability": [
+      {
+        "taskId": "task_session_22222222222242228222222222222222_001",
+        "roomId": "02",
+        "calendarStatus": "FREE",
+        "deliveryDecision": "UNKNOWN",
+        "deliveryAllowed": false,
+        "reasonCode": "ETA_NOT_PROVIDED",
+        "deliveryPolicy": "BLOCK_WHEN_BUSY",
+        "nextAvailableFrom": "2026-11-23T02:07:00+00:00",
+        "busyUntil": null,
+        "checkedAt": "2026-11-23T02:00:00+00:00",
+        "validUntil": "2026-11-23T02:00:00+00:00",
+        "calendarVersion": 1,
+        "dataSource": "CALENDAR",
+        "checkType": "PRELIMINARY",
+        "arrivalWindow": {
+          "start": "2026-11-23T02:07:00+00:00",
+          "end": "2026-11-23T02:10:00+00:00"
+        },
+        "calendarChanged": false
+      },
+      {
+        "taskId": "task_session_22222222222242228222222222222222_002",
+        "roomId": "05",
+        "calendarStatus": "FREE",
+        "deliveryDecision": "UNKNOWN",
+        "deliveryAllowed": false,
+        "reasonCode": "ETA_NOT_PROVIDED",
+        "deliveryPolicy": "BLOCK_WHEN_BUSY",
+        "nextAvailableFrom": "2026-11-23T02:07:00+00:00",
+        "busyUntil": null,
+        "checkedAt": "2026-11-23T02:00:00+00:00",
+        "validUntil": "2026-11-23T02:00:00+00:00",
+        "calendarVersion": 1,
+        "dataSource": "CALENDAR",
+        "checkType": "PRELIMINARY",
+        "arrivalWindow": {
+          "start": "2026-11-23T02:07:00+00:00",
+          "end": "2026-11-23T02:10:00+00:00"
+        },
+        "calendarChanged": false
+      },
+      {
+        "taskId": "task_session_22222222222242228222222222222222_003",
+        "roomId": "07",
+        "calendarStatus": "FREE",
+        "deliveryDecision": "UNKNOWN",
+        "deliveryAllowed": false,
+        "reasonCode": "ETA_NOT_PROVIDED",
+        "deliveryPolicy": "BLOCK_WHEN_BUSY",
+        "nextAvailableFrom": "2026-11-23T02:07:00+00:00",
+        "busyUntil": null,
+        "checkedAt": "2026-11-23T02:00:00+00:00",
+        "validUntil": "2026-11-23T02:00:00+00:00",
+        "calendarVersion": 1,
+        "dataSource": "CALENDAR",
+        "checkType": "PRELIMINARY",
+        "arrivalWindow": {
+          "start": "2026-11-23T02:07:00+00:00",
+          "end": "2026-11-23T02:10:00+00:00"
+        },
+        "calendarChanged": false
+      }
+    ],
+    "executionDecisions": [
+      {
+        "taskId": "task_session_22222222222242228222222222222222_001",
+        "roomId": "02",
+        "status": "PENDING_AVAILABILITY_CHECK",
+        "allowed": false,
+        "reasonCode": "ARRIVAL_WINDOW_REQUIRED"
+      },
+      {
+        "taskId": "task_session_22222222222242228222222222222222_002",
+        "roomId": "05",
+        "status": "PENDING_AVAILABILITY_CHECK",
+        "allowed": false,
+        "reasonCode": "ARRIVAL_WINDOW_REQUIRED"
+      },
+      {
+        "taskId": "task_session_22222222222242228222222222222222_003",
+        "roomId": "07",
+        "status": "PENDING_AVAILABILITY_CHECK",
+        "allowed": false,
+        "reasonCode": "ARRIVAL_WINDOW_REQUIRED"
+      }
+    ]
+  }
+}

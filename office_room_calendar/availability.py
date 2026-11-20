@@ -127,7 +127,13 @@ def vietnamese_feedback(evidence, zone="Asia/Ho_Chi_Minh"):
     room = evidence["roomId"]
     status, decision = evidence["calendarStatus"], evidence["deliveryDecision"]
     if status == "UNKNOWN":
-        return f"Chưa xác minh được lịch phòng {room}; không coi kết quả này là cho phép giao tài liệu."
+        if decision == "DENY":
+            text = f"Phòng {room} đã bị vô hiệu hóa; chính sách không cho phép giao tài liệu."
+        else:
+            text = f"Chưa xác minh được lịch phòng {room}; không coi kết quả này là cho phép giao tài liệu."
+        if evidence["checkType"] == "PRELIMINARY":
+            text += " Đây là kiểm tra sơ bộ; cần kiểm tra lại với khoảng đến và bàn giao thực tế trước khi thực thi."
+        return text
     text = f"Phòng {room} {'có lịch bận' if status == 'BUSY' else 'không có lịch bận'} trong khoảng giao nhận đã kiểm tra."
     if evidence.get("busyUntil"):
         until = utc(evidence["busyUntil"]).astimezone(ZoneInfo(zone)).strftime("%H:%M %d/%m/%Y")
@@ -136,12 +142,14 @@ def vietnamese_feedback(evidence, zone="Asia/Ho_Chi_Minh"):
         next_at = utc(evidence["nextAvailableFrom"]).astimezone(ZoneInfo(zone)).strftime("%H:%M %d/%m/%Y")
         text += f" Thời điểm có thể xét giao tiếp theo theo lịch là {next_at}."
     elif decision == "NEEDS_APPROVAL":
-        text += " Cần quản lý phê duyệt."
+        text += " Cần quản lý phê duyệt; chưa có xác nhận phê duyệt."
     elif decision == "DENY":
         text += " Chính sách phòng không cho phép giao."
     elif evidence["deliveryPolicy"] == "ALLOW_DOOR_HANDOFF" and decision == "ALLOW":
         text += " Chính sách cho phép bàn giao bên ngoài cửa."
+    elif decision == "UNKNOWN" and evidence["reasonCode"] != "ETA_NOT_PROVIDED":
+        text += " Chưa xác minh được điều kiện giao tài liệu theo chính sách phòng."
     if evidence["checkType"] == "PRELIMINARY":
-        text += " Đây là kiểm tra sơ bộ bằng thời gian di chuyển ước tính; cần kiểm tra lại với khoảng đến thực tế."
+        text += " Đây là kiểm tra sơ bộ bằng thời gian di chuyển ước tính; cần kiểm tra lại với khoảng đến và bàn giao thực tế trước khi thực thi."
     text += " Lịch không xác nhận phòng trống người hay cấp quyền điều hướng."
     return text

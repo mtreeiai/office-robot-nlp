@@ -32,6 +32,18 @@ NOW = datetime(2026, 11, 19, 2, 0, tzinfo=UTC)  # Thursday, 09:00 in Vietnam
 PASSWORD = 'calendar-only-test-password'
 ROBOT_TOKEN = 'robot-test-only-' + 'r' * 40
 DB_URL = os.environ.get('CALENDAR_TEST_DATABASE_URL')
+SINGLE_01 = 'Giao tài liệu đến phòng 01.'
+SAME_ROOM = 'Giao hợp đồng và báo cáo đến phòng 01.'
+
+
+def execution_responses():
+    responses=copy.deepcopy(demo_responses())
+    responses[SINGLE_01]=copy.deepcopy(responses[SINGLE])
+    responses[SINGLE_01]['parsedIntent']['destinationText']='phòng 01'
+    responses[SAME_ROOM]=copy.deepcopy(responses[THREE])
+    responses[SAME_ROOM]['tasks']=responses[SAME_ROOM]['tasks'][:2]
+    for task in responses[SAME_ROOM]['tasks']: task['destinationText']='phòng 01'
+    return responses
 
 
 class CalendarAlgorithmsTests(unittest.TestCase):
@@ -114,14 +126,21 @@ class CalendarPostgresTests(unittest.TestCase):
         with self.assertRaises(CalendarError) as result: callback()
         self.assertEqual(result.exception.code,code)
 
-    def make_client(self,nlp=False):
+    def make_client(self,nlp=False,responses=None,environment_flags=False):
         registry=load_semantic_registry()
         self.apps={}
         def factory(sid):
-            app=TextConversationApplication(FakeLanguageUnderstandingParser(copy.deepcopy(demo_responses())),registry.map_catalog,room_registry=registry,session_id=sid)
+            app=TextConversationApplication(FakeLanguageUnderstandingParser(copy.deepcopy(responses or demo_responses())),registry.map_catalog,room_registry=registry,session_id=sid)
             self.apps[sid]=app; return app
         self.bridge=NlpSessionBridge(factory)
-        api=create_api(self.bridge,ApiSettings(access_token='backend-private-token'),self.service,replace(self.settings,nlp_enabled=nlp))
+        if environment_flags:
+            with patch.dict(os.environ,{'RENDER':'false','CALENDAR_ENABLED':'true','CALENDAR_NLP_ENABLED':'true',
+                                       'CALENDAR_DATABASE_URL':DB_URL,'CALENDAR_SESSION_SECRET':self.settings.session_secret,
+                                       'CALENDAR_PUBLIC_ORIGIN':self.settings.public_origin}), \
+                    patch('office_room_calendar.database.CalendarDatabase',return_value=self.db):
+                api=create_api(self.bridge,ApiSettings(access_token='backend-private-token'))
+        else:
+            api=create_api(self.bridge,ApiSettings(access_token='backend-private-token'),self.service,replace(self.settings,nlp_enabled=nlp))
         client=TestClient(api,base_url=self.settings.public_origin)
         client.__enter__(); self.addCleanup(client.__exit__,None,None,None)
         return client
@@ -434,4 +453,162 @@ class CalendarPostgresTests(unittest.TestCase):
         self.assertEqual(result.status_code,200,result.text)
         self.assertEqual(result.json()['dialogueStatus'],'TASK_READY')
         self.assertEqual(result.json()['roomAvailability'][0]['calendarStatus'],'UNKNOWN')
+        self.assertFalse(result.json()['executionDecisions'][0]['allowed'])
         self.assertNotIn('private',result.text)
+
+    def nlp_message(self,client,text=SINGLE_01):
+        headers={'Authorization':'Bearer backend-private-token'}
+        session=client.post('/v1/sessions',headers=headers,json={})
+        self.assertEqual(session.status_code,201,session.text)
+        sid=session.json()['sessionId']
+        result=client.post(f'/v1/sessions/{sid}/messages',headers=headers,json={'messageId':'m1','text':text})
+        self.assertEqual(result.status_code,200,result.text)
+        return sid,result.json()
+
+    def assert_pending_execution(self,payload):
+        tasks=payload['batch']['tasks'] if payload['batch'] else []
+        self.assertEqual(payload['executionDecisions'],[
+            {'taskId':t['taskId'],'roomId':t['destinationId'],'status':'PENDING_AVAILABILITY_CHECK',
+             'allowed':False,'reasonCode':'ARRIVAL_WINDOW_REQUIRED'} for t in tasks])
+        self.assertEqual([(e['taskId'],e['roomId']) for e in payload['roomAvailability']],
+                         [(t['taskId'],t['destinationId']) for t in tasks])
+
+    def test_execution_single_room_01_real_service_and_environment_flags(self):
+        # Exercise the actual factory flags and configuration parser, using only the test DB.
+        client=self.make_client(responses=execution_responses(),environment_flags=True)
+        self.now=datetime.now(UTC)  # The factory-created service uses a real clock.
+        sid,payload=self.nlp_message(client)
+        self.assertEqual(payload['dialogueStatus'],'TASK_READY')
+        self.assert_pending_execution(payload)
+        self.assertEqual(payload['batch']['tasks'][0]['destinationId'],'01')
+        advisory=payload['roomAvailability'][0]
+        self.assertEqual((advisory['calendarStatus'],advisory['checkType']),('FREE','PRELIMINARY'))
+        self.assertFalse(advisory['deliveryAllowed'])
+        self.assertEqual(len(self.apps[sid].tasks),1)
+        self.assertIn('trước khi thực thi',payload['reply'])
+
+    def test_execution_single_busy_evidence_is_exact_service_output(self):
+        self.configure('01',bookable=True); self.book(room='01')
+        client=self.make_client(nlp=True,responses=execution_responses()); sid,payload=self.nlp_message(client)
+        self.assert_pending_execution(payload)
+        expected={'taskId':payload['batch']['tasks'][0]['taskId'],**self.availability.check('01')}
+        self.assertEqual(payload['roomAvailability'],[expected])
+        self.assertEqual((expected['calendarStatus'],expected['deliveryDecision']),('BUSY','DEFER'))
+        self.assertIn('10:00 19/11/2026',payload['reply'])
+        self.assertEqual(payload['batch']['tasks'][0]['lifecycle'],'READY')
+        self.assertEqual(len(self.apps[sid].tasks),1)
+
+    def test_execution_multi_room_priority_and_strict_order_preserve_original_tasks(self):
+        client=self.make_client(nlp=True)
+        for text,policy,priorities in [(THREE,'PRIORITY',['NORMAL','NORMAL','HIGH']),
+                                       (STRICT,'STRICT_ORDER',['HIGH','NORMAL'])]:
+            with self.subTest(policy=policy):
+                sid,payload=self.nlp_message(client,text); self.assert_pending_execution(payload)
+                tasks=payload['batch']['tasks']
+                self.assertEqual(payload['batch']['orderPolicy'],policy)
+                self.assertEqual([t['priority'] for t in tasks],priorities)
+                self.assertEqual([t['sequenceIndex'] for t in tasks],list(range(len(tasks))))
+                self.assertTrue(all(t['constraints']=={'ifBusy':None,'ifClosed':None} for t in tasks))
+                self.assertTrue(all(t['lifecycle']=='READY' and t['handoff']=='NOT_SENT' for t in tasks))
+                self.assertEqual(len(self.apps[sid].tasks),len(tasks))
+                snapshot=client.get('/v1/batches/'+payload['batch']['batchId'],headers={'Authorization':'Bearer backend-private-token'}).json()
+                self.assertEqual(snapshot['orderPreview'],payload['batch']['orderPreview'])
+
+    def test_execution_same_room_keeps_separate_task_associations(self):
+        client=self.make_client(nlp=True,responses=execution_responses()); _,payload=self.nlp_message(client,SAME_ROOM)
+        self.assert_pending_execution(payload)
+        self.assertEqual([e['roomId'] for e in payload['executionDecisions']],['01','01'])
+        self.assertEqual(len({e['taskId'] for e in payload['executionDecisions']}),2)
+
+    def test_execution_unresolved_conflicting_and_social_turns_have_no_authorization(self):
+        responses=execution_responses()
+        responses['Unknown single']=copy.deepcopy(responses[SINGLE_01])
+        responses['Unknown single']['parsedIntent']['destinationText']='phòng 08'
+        client=self.make_client(nlp=True,responses=responses)
+        for text in [UNKNOWN_ROOM,CONFLICT,'Chào bạn','Unknown single']:
+            with self.subTest(text=text):
+                sid,payload=self.nlp_message(client,text)
+                self.assertIsNone(payload['batch']); self.assert_pending_execution(payload)
+                self.assertFalse(self.apps[sid].tasks)
+        # Clarification creates entries only when the entire existing batch becomes ready.
+        sid,_=self.nlp_message(client,UNKNOWN_ROOM)
+        resolved=client.post(f'/v1/sessions/{sid}/messages',headers={'Authorization':'Bearer backend-private-token'},
+                             json={'messageId':'m2','text':'Phòng 5.'}).json()
+        self.assertEqual(resolved['dialogueStatus'],'BATCH_READY'); self.assert_pending_execution(resolved)
+
+    def test_execution_replay_remains_exact_after_calendar_change_without_requery(self):
+        client=self.make_client(nlp=True,responses=execution_responses()); sid,payload=self.nlp_message(client)
+        headers={'Authorization':'Bearer backend-private-token'}; task=payload['batch']['tasks'][0]
+        before=client.get('/v1/tasks/'+task['taskId'],headers=headers).json()
+        self.configure('01',enabled=False); self.now+=timedelta(minutes=1)
+        with patch.object(AvailabilityService,'check',side_effect=AssertionError('Replay must not recheck Calendar')):
+            replay=client.post(f'/v1/sessions/{sid}/messages',headers=headers,json={'messageId':'m1','text':SINGLE_01})
+        self.assertEqual(replay.json(),payload)
+        self.assertEqual(client.get('/v1/tasks/'+task['taskId'],headers=headers).json(),before)
+        self.assertEqual(len(self.apps[sid].tasks),1)
+        conflict=client.post(f'/v1/sessions/{sid}/messages',headers=headers,json={'messageId':'m1','text':THREE})
+        self.assertEqual(conflict.status_code,409)
+
+    def robot_request(self,client,arrival=True,**extra):
+        body={'roomId':'01','operation':'DOCUMENT_DELIVERY',**extra}
+        if arrival:
+            body['arrivalWindow']={'start':NOW.isoformat(),'end':(NOW+timedelta(minutes=3)).isoformat()}
+        return client.post('/v1/robot/availability/check',headers={'Authorization':'Bearer '+ROBOT_TOKEN},json=body)
+
+    def test_execution_final_api_free_busy_and_policy_contract_unchanged(self):
+        self.auth.create_robot('phase7a-test',ROBOT_TOKEN); self.configure('01',bookable=True)
+        client=self.make_client(nlp=True)
+        for busy in [False,True]:
+            if busy: self.book(room='01')
+            for policy in ['BLOCK_WHEN_BUSY','ALLOW_DOOR_HANDOFF','BUSINESS_HOURS_ONLY','MANAGER_APPROVAL','DISABLED']:
+                self.configure('01',deliveryPolicy=policy,workingHours={'3':[['08:00','17:00']]})
+                with self.subTest(busy=busy,policy=policy):
+                    response=self.robot_request(client)
+                    self.assertEqual(response.status_code,200,response.text)
+                    result=response.json(); self.assertEqual(result,self.check(room='01'))
+                    self.assertEqual(result['checkType'],'ARRIVAL_WINDOW')
+                    self.assertEqual(result['calendarStatus'],'BUSY' if busy else 'FREE')
+                    expected={'MANAGER_APPROVAL':'NEEDS_APPROVAL','DISABLED':'DENY'}.get(policy,
+                             'ALLOW' if policy=='ALLOW_DOOR_HANDOFF' or not busy else 'DEFER')
+                    self.assertEqual(result['deliveryDecision'],expected)
+                    self.assertEqual(result['deliveryAllowed'],expected=='ALLOW')
+                    self.assertNotIn('executionDecisions',result)
+                    self.assertGreater(utc(result['validUntil']),utc(result['checkedAt']))
+
+    def test_execution_robot_preliminary_all_policies_never_allows(self):
+        self.auth.create_robot('phase7a-test',ROBOT_TOKEN); client=self.make_client()
+        for policy in ['BLOCK_WHEN_BUSY','ALLOW_DOOR_HANDOFF','BUSINESS_HOURS_ONLY','MANAGER_APPROVAL','DISABLED']:
+            self.configure('01',deliveryPolicy=policy,workingHours={'3':[['08:00','17:00']]})
+            result=self.robot_request(client,arrival=False)
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(result.json()['checkType'],'PRELIMINARY')
+            self.assertFalse(result.json()['deliveryAllowed'])
+
+    def test_execution_robot_invalid_revoked_and_database_outage_rejected_safely(self):
+        self.auth.create_robot('phase7a-test',ROBOT_TOKEN); client=self.make_client()
+        path='/v1/robot/availability/check'; body={'roomId':'01'}
+        for token in ['invalid','backend-private-token']:
+            self.assertEqual(client.post(path,headers={'Authorization':'Bearer '+token},json=body).status_code,401)
+        with patch.object(self.db,'transaction',side_effect=psycopg.OperationalError('private DB detail')):
+            failure=self.robot_request(client)
+        self.assertEqual(failure.status_code,503); self.assertNotIn('private DB detail',failure.text)
+        with patch.object(CalendarAuth,'robot',return_value='validated-test-robot'), \
+                patch.object(self.db,'transaction',side_effect=psycopg.OperationalError('private DB detail')):
+            unknown=self.robot_request(client)
+        self.assertEqual(unknown.status_code,200,unknown.text)
+        self.assertEqual(unknown.json()['calendarStatus'],'UNKNOWN'); self.assertFalse(unknown.json()['deliveryAllowed'])
+        with self.db.transaction() as c: c.execute('UPDATE calendar_robot_tokens SET enabled=false')
+        self.assertEqual(self.robot_request(client).status_code,401)
+
+    def test_execution_robot_invalid_and_expired_windows_never_allow(self):
+        self.auth.create_robot('phase7a-test',ROBOT_TOKEN); client=self.make_client()
+        for start,end in [('2026-11-19T09:00:00',(NOW+timedelta(minutes=3)).isoformat()),
+                          (NOW.isoformat(),NOW.isoformat()),
+                          (NOW.isoformat(),(NOW+timedelta(hours=9)).isoformat()),
+                          ((NOW+timedelta(days=31)).isoformat(),(NOW+timedelta(days=31,minutes=3)).isoformat())]:
+            response=self.robot_request(client,arrival=False,arrivalWindow={'start':start,'end':end})
+            self.assertEqual(response.status_code,422,response.text)
+        self.now+=timedelta(minutes=10)
+        expired=self.robot_request(client)
+        self.assertEqual(expired.status_code,200,expired.text)
+        self.assertEqual(expired.json()['reasonCode'],'WINDOW_EXPIRED'); self.assertFalse(expired.json()['deliveryAllowed'])

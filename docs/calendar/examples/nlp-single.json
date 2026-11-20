@@ -1,0 +1,77 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/v1/sessions/session_11111111111141118111111111111111/messages",
+    "body": {
+      "messageId": "m1",
+      "text": "Giao tài liệu đến phòng 01."
+    }
+  },
+  "response": {
+    "sessionId": "session_11111111111141118111111111111111",
+    "messageId": "m1",
+    "dialogueStatus": "TASK_READY",
+    "reply": "Được rồi, mình đã ghi nhận nhiệm vụ giao tài liệu tới phòng 01.\nPhòng 01 không có lịch bận trong khoảng giao nhận đã kiểm tra. Đây là kiểm tra sơ bộ bằng thời gian di chuyển ước tính; cần kiểm tra lại với khoảng đến và bàn giao thực tế trước khi thực thi. Lịch không xác nhận phòng trống người hay cấp quyền điều hướng.",
+    "batch": {
+      "batchId": null,
+      "orderPolicy": null,
+      "tasks": [
+        {
+          "taskId": "task_session_11111111111141118111111111111111_001",
+          "sequenceIndex": 0,
+          "documentText": "tài liệu",
+          "documentId": null,
+          "recipientText": null,
+          "destinationText": "phòng 01",
+          "destinationId": "01",
+          "priority": "NORMAL",
+          "constraints": {
+            "ifBusy": null,
+            "ifClosed": null
+          },
+          "lifecycle": "READY",
+          "handoff": "NOT_SENT",
+          "documentLoad": "UNCONFIRMED"
+        }
+      ],
+      "orderPreview": [
+        {
+          "position": 0,
+          "taskId": "task_session_11111111111141118111111111111111_001"
+        }
+      ]
+    },
+    "roomAvailability": [
+      {
+        "taskId": "task_session_11111111111141118111111111111111_001",
+        "roomId": "01",
+        "calendarStatus": "FREE",
+        "deliveryDecision": "UNKNOWN",
+        "deliveryAllowed": false,
+        "reasonCode": "ETA_NOT_PROVIDED",
+        "deliveryPolicy": "BLOCK_WHEN_BUSY",
+        "nextAvailableFrom": "2026-11-23T02:07:00+00:00",
+        "busyUntil": null,
+        "checkedAt": "2026-11-23T02:00:00+00:00",
+        "validUntil": "2026-11-23T02:00:00+00:00",
+        "calendarVersion": 1,
+        "dataSource": "CALENDAR",
+        "checkType": "PRELIMINARY",
+        "arrivalWindow": {
+          "start": "2026-11-23T02:07:00+00:00",
+          "end": "2026-11-23T02:10:00+00:00"
+        },
+        "calendarChanged": false
+      }
+    ],
+    "executionDecisions": [
+      {
+        "taskId": "task_session_11111111111141118111111111111111_001",
+        "roomId": "01",
+        "status": "PENDING_AVAILABILITY_CHECK",
+        "allowed": false,
+        "reasonCode": "ARRIVAL_WINDOW_REQUIRED"
+      }
+    ]
+  }
+}

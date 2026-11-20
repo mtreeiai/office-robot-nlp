@@ -42,7 +42,15 @@ class SemanticMapTests(unittest.TestCase):
         for number, room in enumerate(registry.rooms.values(), 1):
             self.assertIs(type(room.room_id), str)
             self.assertEqual(room.spoken_name, f"Phòng {number}")
-            self.assertEqual(room.aliases, (f"phòng {number}", f"phong {number}", f"phong{number}"))
+            self.assertEqual(room.aliases, (f"phòng {number}", f"phong {number}", f"phong{number}",
+                                            f"phòng {number:02d}", f"phong {number:02d}", f"phong{number:02d}"))
+
+    def test_zero_padded_room_aliases_resolve_to_existing_canonical_ids(self):
+        catalog = self.load().map_catalog
+        for number in range(1, 8):
+            for alias in (f"phòng {number:02d}", f"phong {number:02d}", f"phong{number:02d}"):
+                with self.subTest(alias=alias):
+                    self.assertEqual(resolve_destination(alias, catalog), ResolvedLocation("RESOLVED", f"{number:02d}"))
 
     def test_exact_staging_poses(self):
         expected = [

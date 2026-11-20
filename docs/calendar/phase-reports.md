@@ -1,5 +1,7 @@
 # Phase reports
 
+Phase 0–6 history is retained below. Subsequent Server execution-stage work and current results: [Phase 7A report](phase-7a-server-report.md), [execution contract](execution-contract.md).
+
 Branch `feature/office-room-calendar`; independent base `origin/main` at `1b30c3059a44ab6572c8af16694914d0fb18d93f`. Scope follows the explicit Implementation Task plus the supplied local spec. Historical Phase 0 and subsequent implementation are separated below. Verification names refer to executable tests in `tests/test_calendar.py`; the final full run covers every phase together.
 
 ## Phase 0 — Audit
